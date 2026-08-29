@@ -93,7 +93,12 @@ func (mod *module) Open(driverID sobek.Value, connectionString string, opts *opt
 		return nil, fmt.Errorf("%w: %s", errUnsupportedDatabase, database)
 	}
 
-	db, err := sql.Open(database, connectionString)
+	openedDatabase, err := openDriverName(database)
+	if err != nil {
+		return nil, err
+	}
+
+	db, err := sql.Open(openedDatabase, connectionString)
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +153,12 @@ func (dbase *Database) ExecWithTimeout(timeout string, query string, args ...any
 }
 
 // Close the database and prevents new queries from starting.
+// When Oracle OTLP export is enabled, this also flushes any buffered spans.
 func (dbase *Database) Close() error {
-	return dbase.db.Close()
+	closeErr := dbase.db.Close()
+	flushErr := flushOracleTracerProvider(context.Background())
+
+	return errors.Join(closeErr, flushErr)
 }
 
 func (dbase *Database) parseTimeout(timeout string) (context.Context, context.CancelFunc, error) {
